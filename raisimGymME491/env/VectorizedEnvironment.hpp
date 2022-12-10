@@ -99,6 +99,16 @@ class VectorizedEnvironment {
       perAgentStep(i, action, reward, done, test);
   }
 
+  void stepWTerminal(Eigen::Ref<EigenRowMajorMat> &action,
+                     Eigen::Ref<EigenVec> &reward,
+                     Eigen::Ref<EigenBoolVec> &done,
+                     Eigen::Ref<EigenVec> &terminalReward,
+                     bool test) {
+#pragma omp parallel for schedule(auto)
+    for (int i = 0; i < num_envs_; i++)
+      perAgentStepWTerminal(i, action, reward, done, terminalReward, test);
+  }
+
   void turnOnVisualization() { if(render_) environments_[0]->turnOnVisualization(); }
   void turnOffVisualization() { if(render_) environments_[0]->turnOffVisualization(); }
   void startRecordingVideo(const std::string& videoName) { if(render_) environments_[0]->startRecordingVideo(videoName); }
@@ -180,6 +190,25 @@ class VectorizedEnvironment {
 
     float terminalReward = 0;
     done[agentId] = environments_[agentId]->isTerminalState(terminalReward);
+
+    if (done[agentId]) {
+      environments_[agentId]->reset(test);
+      reward[agentId] += terminalReward;
+    }
+  }
+
+  inline void perAgentStepWTerminal(int agentId,
+                           Eigen::Ref<EigenRowMajorMat> &action,
+                           Eigen::Ref<EigenVec> &reward,
+                           Eigen::Ref<EigenBoolVec> &done,
+                           Eigen::Ref<EigenVec> &terminalRew,
+                           bool test) {
+    reward[agentId] = environments_[agentId]->step(action.row(agentId));
+    rewardInformation_[agentId] = environments_[agentId]->getRewards().getStdMap();
+
+    float terminalReward = 0;
+    done[agentId] = environments_[agentId]->isTerminalState(terminalReward);
+    terminalRew[agentId] = terminalReward;
 
     if (done[agentId]) {
       environments_[agentId]->reset(test);

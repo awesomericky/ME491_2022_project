@@ -22,12 +22,16 @@ class RaisimGymVecEnv:
         self.actions = np.zeros([self.num_envs, self.num_acts], dtype=np.float32)
         self.log_prob = np.zeros(self.num_envs, dtype=np.float32)
         self._reward = np.zeros(self.num_envs, dtype=np.float32)
+        self._terminal_reward = np.zeros(self.num_envs, dtype=np.float32)
         self._done = np.zeros(self.num_envs, dtype=np.bool)
         self.rewards = [[] for _ in range(self.num_envs)]
         self.wrapper.setSeed(seed)
         self.count = 0.0
         self.mean = np.zeros(self.num_obs, dtype=np.float32)
         self.var = np.zeros(self.num_obs, dtype=np.float32)
+
+        self.total_num_done = 0
+        self.total_num_success = 0
 
     def seed(self, seed=None):
         self.wrapper.setSeed(seed)
@@ -44,8 +48,16 @@ class RaisimGymVecEnv:
     def stop_video_recording(self):
         self.wrapper.stopRecordingVideo()
 
-    def step(self, action, test=False):
-        self.wrapper.step(action, self._reward, self._done, test)
+    def step(self, action, test=False, get_terminal_reward=False):
+        if get_terminal_reward:
+            self.wrapper.step(action, self._reward, self._done, test)
+        else:
+            self.wrapper.stepWTerminal(action, self._reward, self._done, self._terminal_reward, test)
+            num_success = len(np.where(np.logical_and(self._done, self._terminal_reward == 0.))[0])
+            num_done = len(np.where(self._done)[0])
+            self.total_num_success += num_success
+            self.total_num_done += num_done
+
         return self._reward.copy(), self._done.copy()
 
     def load_scaling(self, dir_name, iteration, count=1e5):
@@ -69,6 +81,8 @@ class RaisimGymVecEnv:
 
     def reset(self, test=False):
         self._reward = np.zeros(self.num_envs, dtype=np.float32)
+        self.total_num_success = 0
+        self.total_num_done = 0
         self.wrapper.reset(test)
 
     def close(self):
@@ -76,6 +90,9 @@ class RaisimGymVecEnv:
 
     def curriculum_callback(self):
         self.wrapper.curriculumUpdate()
+
+    def get_success_rate(self):
+        return self.total_num_success / self.total_num_done
 
     @property
     def num_envs(self):

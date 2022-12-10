@@ -122,7 +122,7 @@ for update in range(1000000):
     for step in range(n_steps):
         obs = env.observe()
         action = ppo.act(obs)
-        reward, dones = env.step(action)
+        reward, dones = env.step(action, get_terminal_reward=True)
         ppo.step(value_obs=obs, rews=reward, dones=dones)
         done_sum = done_sum + np.sum(dones)
         reward_ll_sum = reward_ll_sum + np.sum(reward)
@@ -139,6 +139,7 @@ for update in range(1000000):
 
     # curriculum update. Implement it in Environment.hpp
     env.curriculum_callback()
+    success_rate = env.get_success_rate()
 
     end = time.time()
 
@@ -150,4 +151,5 @@ for update in range(1000000):
     print('{:<40} {:>6}'.format("fps: ", '{:6.0f}'.format(total_steps / (end - start))))
     print('{:<40} {:>6}'.format("real time factor: ", '{:6.0f}'.format(total_steps / (end - start)
                                                                        * cfg['environment']['control_dt'])))
+    print(f"success_rate: {success_rate}")
     print('----------------------------------------------------\n')

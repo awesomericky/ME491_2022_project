@@ -12,7 +12,7 @@ environment:
   max_time: 4.0
   action_std: 0.3
   reward:
-    forwardVel:
+    goal:
       coeff: 0.3
     torque:
       coeff: -1e-4

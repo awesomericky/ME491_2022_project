@@ -60,7 +60,7 @@ class ENVIRONMENT : public RaisimGymEnv {
     aliengo_->setGeneralizedForce(Eigen::VectorXd::Zero(gvDim_));
 
     /// MUST BE DONE FOR ALL ENVIRONMENTS
-    obDim_ = 34;
+    obDim_ = 34 - 1 + 6 + 3;
     actionDim_ = nJoints_; actionMean_.setZero(actionDim_); actionStd_.setZero(actionDim_);
     obDouble_.setZero(obDim_);
 
@@ -78,9 +78,6 @@ class ENVIRONMENT : public RaisimGymEnv {
     footIndices_.insert(aliengo_->getBodyIdx("FL_calf"));
     footIndices_.insert(aliengo_->getBodyIdx("RR_calf"));
     footIndices_.insert(aliengo_->getBodyIdx("RL_calf"));
-
-
-
 
     /// visualize if it is the first environment
     if (visualizable_) {
@@ -119,8 +116,10 @@ class ENVIRONMENT : public RaisimGymEnv {
 
     updateObservation();
 
+    double goalReward = 10. - (goal_position - gc_.head(3)).norm();
+
     rewards_.record("torque", aliengo_->getGeneralizedForce().squaredNorm());
-    rewards_.record("forwardVel", std::min(4.0, bodyLinearVel_[0]));
+    rewards_.record("goal", goalReward);
 
     return rewards_.sum();
   }
@@ -139,11 +138,30 @@ class ENVIRONMENT : public RaisimGymEnv {
     if(visualizable_)
       goal_sphere->setPosition(goal_position);
 
-    obDouble_ << gc_[2], /// body height
+    // compute relative target goal position
+    for (int i=0; i<obstacles_.size()-1; i++) {
+      if (obstacle_x_pos[i+1] > gc_[0] && gc_[0] >= obstacle_x_pos[i]) {
+        closestObsRelPos = rot.e().transpose() * (obstacles_[i+1]->getPosition() - gc_.head(3));
+        goalObsRelPos = rot.e().transpose() * (goal_position - gc_.head(3));
+      }
+    }
+
+    Eigen::Vector3d obsVel ={velocity, 0, 0};
+    Eigen::Vector3d obsRelVel = rot.e().transpose() * obsVel;
+
+//    obDouble_ << gc_[2], /// body height
+//        rot.e().row(2).transpose(), /// body orientation
+//        gc_.tail(12), /// joint angles
+//        bodyLinearVel_, bodyAngularVel_, /// body linear&angular velocity
+//        gv_.tail(12); /// joint velocity
+    obDouble_ <<
         rot.e().row(2).transpose(), /// body orientation
         gc_.tail(12), /// joint angles
         bodyLinearVel_, bodyAngularVel_, /// body linear&angular velocity
-        gv_.tail(12); /// joint velocity
+        gv_.tail(12), /// joint velocity
+        closestObsRelPos,
+        goalObsRelPos,
+        obsRelVel;
   }
 
   Eigen::VectorXd update_gc_init (Eigen::VectorXd gc_nominal) {
@@ -165,8 +183,10 @@ class ENVIRONMENT : public RaisimGymEnv {
       if(footIndices_.find(contact.getlocalBodyIndex()) == footIndices_.end())
         return true;
 
-    if (is_success_)
+    if (is_success_) {
+      terminalReward = 0.f;
       return true;
+    }
 
     terminalReward = 0.f;
     return false;
@@ -275,6 +295,8 @@ class ENVIRONMENT : public RaisimGymEnv {
   raisim::Visuals *goal_sphere;
   Eigen::Vector3d goal_position;
   bool is_success_ = false;
+
+  Eigen::Vector3d closestObsRelPos, goalObsRelPos;
 
 
   /// these variables are not in use. They are placed to show you how to create a random number sampler.
