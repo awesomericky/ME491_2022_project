@@ -49,7 +49,7 @@ class RaisimGymVecEnv:
         self.wrapper.stopRecordingVideo()
 
     def step(self, action, test=False, get_terminal_reward=False):
-        if get_terminal_reward:
+        if not get_terminal_reward:
             self.wrapper.step(action, self._reward, self._done, test)
         else:
             self.wrapper.stepWTerminal(action, self._reward, self._done, self._terminal_reward, test)
@@ -92,7 +92,7 @@ class RaisimGymVecEnv:
         self.wrapper.curriculumUpdate()
 
     def get_success_rate(self):
-        return self.total_num_success / self.total_num_done
+        return self.total_num_success / self.total_num_done if self.total_num_done != 0 else 0.
 
     @property
     def num_envs(self):

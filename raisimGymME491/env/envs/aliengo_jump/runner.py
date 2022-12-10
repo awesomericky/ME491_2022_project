@@ -151,5 +151,5 @@ for update in range(1000000):
     print('{:<40} {:>6}'.format("fps: ", '{:6.0f}'.format(total_steps / (end - start))))
     print('{:<40} {:>6}'.format("real time factor: ", '{:6.0f}'.format(total_steps / (end - start)
                                                                        * cfg['environment']['control_dt'])))
-    print(f"success_rate: {success_rate}")
+    print(f"success_rate: {success_rate} ({env.total_num_success} / {env.total_num_done}) ")
     print('----------------------------------------------------\n')

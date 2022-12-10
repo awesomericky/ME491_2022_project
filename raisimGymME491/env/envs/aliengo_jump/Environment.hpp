@@ -116,7 +116,7 @@ class ENVIRONMENT : public RaisimGymEnv {
 
     updateObservation();
 
-    double goalReward = 10. - (goal_position - gc_.head(3)).norm();
+    double goalReward = 15. - (goal_position - gc_.head(3)).norm();
 
     rewards_.record("torque", aliengo_->getGeneralizedForce().squaredNorm());
     rewards_.record("goal", goalReward);
