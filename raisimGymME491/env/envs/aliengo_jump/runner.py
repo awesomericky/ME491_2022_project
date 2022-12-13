@@ -88,6 +88,7 @@ for update in range(1000000):
     average_dones = 0.
 
     if update % cfg['environment']['eval_every_n'] == 0:
+        env.reset(test=True)
         print("Visualizing and evaluating the current policy")
         torch.save({
             'actor_architecture_state_dict': actor.architecture.state_dict(),
@@ -107,13 +108,13 @@ for update in range(1000000):
                 frame_start = time.time()
                 obs = env.observe(False)
                 action_ll = loaded_graph.architecture(torch.from_numpy(obs).cpu())
-                reward_ll, dones = env.step(action_ll.cpu().detach().numpy())
+                reward_ll, dones = env.step(action_ll.cpu().detach().numpy(), test=True)
                 frame_end = time.time()
                 wait_time = cfg['environment']['control_dt'] - (frame_end-frame_start)
                 if wait_time > 0.:
                     time.sleep(wait_time)
         env.stop_video_recording()
-        env.turn_off_visualization()
+        # env.turn_off_visualization()
 
         env.reset()
         env.save_scaling(saver.data_dir, str(update))
@@ -135,7 +136,8 @@ for update in range(1000000):
     avg_rewards.append(average_ll_performance)
 
     actor.update()
-    actor.distribution.enforce_minimum_std((torch.ones(12)*0.2).to(device))
+    # actor.distribution.enforce_minimum_std((torch.ones(12)*0.2).to(device))
+    actor.distribution.enforce_minimum_std((torch.ones(12)*(0.6*math.exp(-0.0002*update) + 0.4)).to(device))
 
     # curriculum update. Implement it in Environment.hpp
     env.curriculum_callback()
@@ -152,4 +154,5 @@ for update in range(1000000):
     print('{:<40} {:>6}'.format("real time factor: ", '{:6.0f}'.format(total_steps / (end - start)
                                                                        * cfg['environment']['control_dt'])))
     print(f"success_rate: {success_rate} ({env.total_num_success} / {env.total_num_done}) ")
+    print(ppo.actor.distribution.std.cpu().detach().numpy())
     print('----------------------------------------------------\n')

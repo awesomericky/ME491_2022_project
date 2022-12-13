@@ -53,7 +53,8 @@ class RaisimGymVecEnv:
             self.wrapper.step(action, self._reward, self._done, test)
         else:
             self.wrapper.stepWTerminal(action, self._reward, self._done, self._terminal_reward, test)
-            num_success = len(np.where(np.logical_and(self._done, self._terminal_reward == 0.))[0])
+            # num_success = len(np.where(np.logical_and(self._done, self._terminal_reward == 0.))[0])
+            num_success = len(np.where(self._terminal_reward == 10.)[0])
             num_done = len(np.where(self._done)[0])
             self.total_num_success += num_success
             self.total_num_done += num_done

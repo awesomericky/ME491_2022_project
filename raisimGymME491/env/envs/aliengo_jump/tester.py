@@ -1,3 +1,5 @@
+import pdb
+
 from ruamel.yaml import YAML, dump, RoundTripDumper
 from raisimGymME491.env.bin import aliengo_jump
 from raisimGymME491.env.RaisimGymVecEnv import RaisimGymVecEnv as VecEnv
@@ -23,6 +25,7 @@ cfg = YAML().load(open(task_path + "/cfg.yaml", 'r'))
 
 # create environment from the configuration file
 cfg['environment']['num_envs'] = 1
+cfg['environment']['num_threads'] = 1
 
 env = VecEnv(aliengo_jump.RaisimGymEnv(home_path, dump(cfg['environment'], Dumper=RoundTripDumper)), cfg['environment'])
 
@@ -56,14 +59,21 @@ else:
 
     # max_steps = 1000000
     max_steps = 1000 ## 10 secs
+    count = 0
+    pdb.set_trace()
 
     for step in range(max_steps):
         time.sleep(0.01)
         obs = env.observe(False)
         action_ll = loaded_graph.architecture(torch.from_numpy(obs).cpu())
-        reward_ll, dones = env.step(action_ll.cpu().detach().numpy(), test=True)
+        # reward_ll, dones = env.step(action_ll.cpu().detach().numpy(), test=True)
+        reward_ll, dones = env.step(action_ll.cpu().detach().numpy(), test=True, get_terminal_reward=True)
         reward_ll_sum = reward_ll_sum + reward_ll[0]
         if dones or step == max_steps - 1:
+            if env._terminal_reward[0] == 10.:
+                print("Sucess!!")
+                env._terminal_reward[0] = 0.
+
             print('----------------------------------------------------')
             print('{:<40} {:>6}'.format("average ll reward: ", '{:0.10f}'.format(reward_ll_sum / (step + 1 - start_step_id))))
             print('{:<40} {:>6}'.format("time elapsed [sec]: ", '{:6.4f}'.format((step + 1 - start_step_id) * 0.01)))

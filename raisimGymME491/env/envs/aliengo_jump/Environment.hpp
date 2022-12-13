@@ -60,7 +60,7 @@ class ENVIRONMENT : public RaisimGymEnv {
     aliengo_->setGeneralizedForce(Eigen::VectorXd::Zero(gvDim_));
 
     /// MUST BE DONE FOR ALL ENVIRONMENTS
-    obDim_ = 34 - 1 + 6 + 3;
+    obDim_ = 34 - 1 + 6 + 3 + 2 + 1 + 1 + 1;
     actionDim_ = nJoints_; actionMean_.setZero(actionDim_); actionStd_.setZero(actionDim_);
     obDouble_.setZero(obDim_);
 
@@ -82,7 +82,7 @@ class ENVIRONMENT : public RaisimGymEnv {
     /// visualize if it is the first environment
     if (visualizable_) {
       server_ = std::make_unique<raisim::RaisimServer>(world_.get());
-      server_->launchServer();
+      server_->launchServer(8080);
       server_->focusOn(aliengo_);
       /// add Visual sphere
       goal_sphere = server_->addVisualSphere("goal_obj_", 0.3, 1, 0, 0, 0.7);
@@ -116,10 +116,52 @@ class ENVIRONMENT : public RaisimGymEnv {
 
     updateObservation();
 
-    double goalReward = 15. - (goal_position - gc_.head(3)).norm();
+    Eigen::Vector3d goalHeading = goalObsRelPos / goalObsRelPos.head<2>().norm();
+    goalHeading[2] = 0.;
+    Eigen::Vector2d heading; heading << 1., 0.;
+//    double projGoalDist = std::min(goalObsRelPos.norm(), 3.);
+
+    double goalReward = 5. - goalObsRelPos.norm(); //////////////
+//    if (goalObsRelPos.norm() < 1.) {
+//      goalReward += 100 - 100 * (aliengo_->getBasePosition().e() - goal_position).head(2).norm();
+//    }  /// Try2
+
+    double headingCosTheta = heading.dot(goalHeading.head(2)) / (goalHeading.head(2).norm() * heading.norm());
+//    double projVel = bodyLinearVel_.dot(closestObsRelPos) / closestObsRelPos.norm();
+    double projVel = bodyLinearVel_.head(2).dot(closestObsRelPos.head(2)) / closestObsRelPos.head(2).norm();
+    double orthoVel = std::sqrt(bodyLinearVel_.head(2).squaredNorm() - std::pow(projVel, 2));
 
     rewards_.record("torque", aliengo_->getGeneralizedForce().squaredNorm());
-    rewards_.record("goal", goalReward);
+    /// Try1
+//    rewards_.record("goal", 3 * goalReward + 10 * headingCosTheta + 10 * projVel);
+
+    /// Try2
+    if (obstacles_[num_obstacle - 2]->getPosition()[0] - 1. < gc_[0]) {
+      double goalRewVal = 10 * goalReward + 10 * (projVel - orthoVel) - 100 * std::min(std::abs(gc_[1]), 0.2);
+//      double goalRewVal = 10 * goalReward - 500 * std::min(std::abs(gc_[1]), 0.2);
+      if (isnan(goalRewVal))
+        rewards_.record("goal", 0.);
+      else
+        rewards_.record("goal", goalRewVal);
+//      if ((aliengo_->getBasePosition().e() - goal_position).head(2).norm() < 0.2)
+//        rewards_.record("goal", 20 * (projVel - orthoVel)); //3
+//      else {
+//        rewards_.record("goal", 20 * goalReward); //3
+    } else {
+      double goalRewVel = 10 * headingCosTheta + projVel - 100 * std::min(std::abs(gc_[1]), 0.2);
+      if (isnan(goalRewVel))
+        rewards_.record("goal", 0.);
+      else
+        rewards_.record("goal", goalRewVel);
+//      rewards_.record("goal", 10 * headingCosTheta + 10 * projVel);
+    }
+
+//    /// Try3
+//    if (obstacles_[num_obstacle - 2]->getPosition()[0] - 1. < gc_[0]) {
+//      rewards_.record("goal", 50 * headingCosTheta + 20 * goalReward); //3
+//    } else {
+//      rewards_.record("goal", 10 * headingCosTheta + 10 * projVel);
+//    }
 
     return rewards_.sum();
   }
@@ -138,12 +180,46 @@ class ENVIRONMENT : public RaisimGymEnv {
     if(visualizable_)
       goal_sphere->setPosition(goal_position);
 
+    double current_gap = 0.;
+    double current_height = 0.;
+
     // compute relative target goal position
     for (int i=0; i<obstacles_.size()-1; i++) {
-      if (obstacle_x_pos[i+1] > gc_[0] && gc_[0] >= obstacle_x_pos[i]) {
+      if (obstacle_x_pos[i+1] >= gc_[0] && gc_[0] >= obstacle_x_pos[i]) {
         closestObsRelPos = rot.e().transpose() * (obstacles_[i+1]->getPosition() - gc_.head(3));
-        goalObsRelPos = rot.e().transpose() * (goal_position - gc_.head(3));
+        Eigen::Vector3d goal_pos_w_height = goal_position;
+        goal_pos_w_height[2] += 0.5;
+        goalObsRelPos = rot.e().transpose() * (goal_pos_w_height - gc_.head(3));
+        if (i == obstacles_.size() - 2) {
+          current_gap = obstacles_[i+1]->getPosition()[0] - obstacles_[i]->getPosition()[0] - 2.;
+        } else {
+          current_gap = gap_batch[i+1];
+        }
+
+        current_height = height_batch[i+1] - gc_[2];
+        targetIdx = i+1;
+        break;
       }
+    }
+
+    if (obstacle_x_pos[0] > gc_[0]) {
+      closestObsRelPos = rot.e().transpose() * (obstacles_[1]->getPosition() - gc_.head(3));
+      Eigen::Vector3d goal_pos_w_height = goal_position;
+      goal_pos_w_height[2] += 0.5;
+      goalObsRelPos = rot.e().transpose() * (goal_pos_w_height - gc_.head(3));
+      current_gap = 0.;
+      current_height = height_batch[1] - gc_[2];
+      targetIdx = 1;
+    }
+
+    if (gc_[0] >= obstacle_x_pos[num_obstacle - 1]) {
+      closestObsRelPos = rot.e().transpose() * (obstacles_[num_obstacle - 1]->getPosition() - gc_.head(3));
+      Eigen::Vector3d goal_pos_w_height = goal_position;
+      goal_pos_w_height[2] += 0.5;
+      goalObsRelPos = rot.e().transpose() * (goal_pos_w_height - gc_.head(3));
+      current_gap = 0.;
+      current_height = height_batch[num_obstacle - 1] - gc_[2];
+      targetIdx = num_obstacle - 1;
     }
 
     Eigen::Vector3d obsVel ={velocity, 0, 0};
@@ -154,14 +230,17 @@ class ENVIRONMENT : public RaisimGymEnv {
 //        gc_.tail(12), /// joint angles
 //        bodyLinearVel_, bodyAngularVel_, /// body linear&angular velocity
 //        gv_.tail(12); /// joint velocity
-    obDouble_ <<
+    obDouble_ << gc_[1], gc_[2],
         rot.e().row(2).transpose(), /// body orientation
         gc_.tail(12), /// joint angles
         bodyLinearVel_, bodyAngularVel_, /// body linear&angular velocity
         gv_.tail(12), /// joint velocity
         closestObsRelPos,
         goalObsRelPos,
-        obsRelVel;
+        obsRelVel,
+        current_gap,
+        current_height,
+        (aliengo_->getBasePosition().e() - goal_position).head(2).norm();
   }
 
   Eigen::VectorXd update_gc_init (Eigen::VectorXd gc_nominal) {
@@ -183,8 +262,17 @@ class ENVIRONMENT : public RaisimGymEnv {
       if(footIndices_.find(contact.getlocalBodyIndex()) == footIndices_.end())
         return true;
 
+    for (auto & obstacle : obstacles_) {
+      if (obstacle->getPosition()[0] - 1. < gc_[0] && gc_[0] < obstacle->getPosition()[0] + 1.)
+        if (gc_[2] <= obstacle->getPosition()[2])
+          return true;
+    }
+
+    if (obstacles_.back()->getPosition()[0] + 1. <= gc_[0])
+      return true;
+
     if (is_success_) {
-      terminalReward = 0.f;
+      terminalReward = 10.; // 100 /////////////////////
       return true;
     }
 
@@ -242,8 +330,8 @@ class ENVIRONMENT : public RaisimGymEnv {
     double gap;
     /// For test
     if (test) {
-      std::vector<double> height_batch = {1.0, 1.0, 1.0+0.12, 1.0-0.15, 1.0+0.3};
-      std::vector<double> gap_batch = {0, 0.25+0.03, 0.75-0.02, 1.5+0.05, 2.5+0.01};
+      height_batch = {1.0, 1.0, 1.0+0.12, 1.0-0.15, 1.0+0.3};
+      gap_batch = {0, 0.25+0.03, 0.75-0.02, 1.5+0.05, 2.5+0.01};
       for (int i = 0; i < num_obstacle; i++) {
         /// Set the vertical & horizontal gap
         height = height_batch[i]; /// add noise
@@ -260,10 +348,14 @@ class ENVIRONMENT : public RaisimGymEnv {
 
     else
     {
+        height_batch.clear();
+        gap_batch.clear();
         for (int i=0; i<num_obstacle; i++) {
           /// Set the vertical & horizontal gap
           height = 1.0 + (i != 0) * (0.05*i) * normDist_(gen_); /// add noise
           gap = 0.25*i*(i+1)/2 + (i != 0) * 0.05 * normDist_(gen_); /// add noise
+          height_batch.push_back(height);
+          gap_batch.push_back(gap);
 
           /// Set position
           obstacles_[i]->setPosition(2*i + gap, 0, height);
@@ -284,7 +376,8 @@ class ENVIRONMENT : public RaisimGymEnv {
   bool visualizable_ = false;
   raisim::ArticulatedSystem* aliengo_;
   Eigen::VectorXd gc_init_, gv_init_, gc_nominal_, gc_, gv_, pTarget_, pTarget12_, vTarget_;
-  double terminalRewardCoeff_ = -10.;
+//  double terminalRewardCoeff_ = -10.;
+  double terminalRewardCoeff_ = -1.;  // -1. ////////////////////////////
   Eigen::VectorXd actionMean_, actionStd_, obDouble_;
   Eigen::Vector3d bodyLinearVel_, bodyAngularVel_;
   std::set<size_t> footIndices_;
@@ -297,7 +390,8 @@ class ENVIRONMENT : public RaisimGymEnv {
   bool is_success_ = false;
 
   Eigen::Vector3d closestObsRelPos, goalObsRelPos;
-
+  std::vector<double> height_batch, gap_batch;
+  int targetIdx;
 
   /// these variables are not in use. They are placed to show you how to create a random number sampler.
   std::normal_distribution<double> normDist_;
